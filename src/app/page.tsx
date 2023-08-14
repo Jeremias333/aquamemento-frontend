@@ -64,11 +64,15 @@ export default function Home() {
   const [selectedPersonWeight, setSelectedPersonWeight] = useState<number>(0.0);
   const [selectedPersonName, setSelectedPersonName] = useState<string>("");
   const [enableNextButton, setEnableNextButton] = useState<boolean>(false);
+  const personId = useRef<number>(0);
+  const canNextPage = useRef<boolean>(false);
 
   function handleSelectPeople(value: string) {
     const person = persons.find((person) => person.name === value);
+    formPerson.setFieldsValue({ person: person?.name });
     if (person) {
       formPerson.setFieldsValue({ kg: person.kg });
+      personId.current = person.id;
       setSelectedPersonWeight(person.kg);
       setSelectedPersonName(person.name);
       setEnableNextButton(true);
@@ -76,13 +80,157 @@ export default function Home() {
   }
 
   async function handleNext() {
-    formConsume.submit();
-    const values = await formConsume.validateFields();
-
+    formPerson.submit();
+    const values = await formPerson.validateFields();
     if (values?.errorFields?.length > 0) {
       return;
     } else {
-      setActivatedSection("2");
+      let body = {
+        kg: values.kg,
+      };
+
+      await fetchAPI(urlAPI, "api/calculate/daily-goal/", "POST", body)
+        .then((res) => {
+          if (res && res.daily_goal) {
+            dailyGoal.current = res.daily_goal;
+          } else {
+            notify.error({
+              message: "Erro ao calcular meta diária!",
+              description:
+                "Ocorreu um erro ao calcular a meta diária no servidor!",
+              placement: "topRight",
+              duration: 5,
+            });
+            canNextPage.current = false;
+            return;
+          }
+        })
+        .catch((err) => {
+          notify.error({
+            message: "Erro ao calcular meta diária!",
+            description:
+              "Ocorreu um erro ao calcular a meta diária! Erro: " + err,
+            placement: "topRight",
+            duration: 5,
+          });
+          canNextPage.current = false;
+          return;
+        });
+      let bodyCreateInfo = {
+        person_id: personId.current,
+        daily_goal: dailyGoal.current,
+      };
+      await fetchAPI(urlAPI, "api/infos/", "POST", bodyCreateInfo)
+        .then((res) => {
+          if (
+            res &&
+            res.message !== "An Info object already exists for today."
+          ) {
+            console.log("Não existia mas foi criado");
+          } else if (
+            res &&
+            res.message === "An Info object already exists for today."
+          ) {
+            console.log("Já existia");
+          } else {
+            notify.error({
+              message: "Erro ao criar informações!",
+              description: "Ocorreu um erro ao criar informações no servidor!",
+              placement: "topRight",
+              duration: 5,
+            });
+            canNextPage.current = false;
+            return;
+          }
+        })
+        .catch((err) => {
+          notify.error({
+            message: "Erro ao criar informações!",
+            description: "Ocorreu um erro ao criar informações! Erro: " + err,
+            placement: "topRight",
+            duration: 5,
+          });
+          canNextPage.current = false;
+          return;
+        });
+      let path = "api/persons/" + personId.current + "/";
+      await fetchAPI(urlAPI, path, "GET").then((res) => {
+        if (res && res.now_drink){
+          nowDrink.current = res.now_drink;
+        }else{
+          notify.error({
+            message: "Erro ao pegar informações!",
+            description: "Ocorreu um erro ao pegar informações do servidor!",
+            placement: "topRight",
+            duration: 5,
+          });
+          canNextPage.current = false;
+          return;
+        }
+      });
+
+      let pathToInfos = "api/infos/" + nowDrink.current + "/";
+      await fetchAPI(urlAPI, pathToInfos, "GET").then((res) => {
+        if (res){
+          dailyConsumed.current = res.drank;
+          goal.current = res.reached_goal;
+          console.log("goal: " + goal.current)
+        }else{
+          notify.error({
+            message: "Erro ao pegar informações!",
+            description: "Ocorreu um erro ao pegar informações do servidor!",
+            placement: "topRight",
+            duration: 5,
+          });
+          canNextPage.current = false;
+          return;
+        }
+      });
+
+      let bodyRemaining = {
+        daily_goal: dailyGoal.current,
+        drank: dailyConsumed.current,
+      }
+
+      console.log(dailyConsumed.current, dailyGoal.current)
+
+      await fetchAPI(urlAPI, "api/calculate/remaining-percentage/", "POST", bodyRemaining).then((res) => {
+        if (res && res.remaining_percent){
+          dailyConsumedPercent.current = parseFloat(res.remaining_percent).toFixed(2);
+        }else{
+          notify.error({
+            message: "Erro ao pegar informações!",
+            description: "Ocorreu um erro ao pegar informações do servidor!",
+            placement: "topRight",
+            duration: 5,
+          });
+          canNextPage.current = false;
+          return;
+        }
+      });
+
+      await fetchAPI(urlAPI, "api/calculate/remaining-goal/", "POST", bodyRemaining).then((res) => {
+        if (res){
+          dailyGoalRemaining.current = res.remaining_goal;
+          canNextPage.current = true;
+          return;
+        }else{
+          notify.error({
+            message: "Erro ao pegar informações!",
+            description: "Ocorreu um erro ao pegar informações do servidor!",
+            placement: "topRight",
+            duration: 5,
+          });
+          canNextPage.current = false;
+          return;
+        }
+      });
+
+      if (canNextPage.current) {
+        canNextPage.current = false;
+        setActivatedSection("2");
+      }
+      
     }
   }
 
@@ -96,8 +244,11 @@ export default function Home() {
   const dailyGoal = useRef<number>(0.0);
   const dailyGoalRemaining = useRef<number>(0.0);
   const dailyConsumed = useRef<number>(0.0);
-  const dailyConsumedPercent = useRef<number>(0.0);
+  const dailyConsumedPercent = useRef<string>("0");
   const goal = useRef<boolean>(false);
+  const nowDrink = useRef<number>(0);
+  const [activateRefresh, setActivateRefresh] = useState<boolean>(false);
+  const [valueRadio, setValueRadio] = useState<number | null>(0.0);
 
   const onChangeDatePickcer: DatePickerProps["onChange"] = (
     date,
@@ -108,7 +259,10 @@ export default function Home() {
 
   const onChangeContainer = (e: RadioChangeEvent) => {
     setConsumeButtonActive(true);
-    console.log("radio checked", e.target.value);
+    // const radioNew = formConsume.getFieldValue("customContainer");
+    // console.log(radioNew);
+    console.log(e.target.checked)
+    // console.log("radio checked", e.target.value);
     setValueContainer(e.target.value);
   };
 
@@ -121,6 +275,35 @@ export default function Home() {
       }
     });
   }
+
+  async function handleConsume() {
+    let body = {
+      person_id: personId.current,
+      drink: valueContainer,
+    }
+    await fetchAPI(urlAPI, "api/drink/", "PUT", body).then((res) => {
+      if (res){
+        console.log("Consumiu");
+        notify.success({
+          message: "Consumiu com sucesso!",
+          description: "O consumo foi registrado com sucesso!",
+          placement: "topRight",
+          duration: 3,
+        });
+      }else{
+        notify.error({
+          message: "Erro ao consumir!",
+          description: "Ocorreu um erro ao consumir!",
+          placement: "topRight",
+          duration: 3,
+        });
+      }
+    });
+  }
+
+  useEffect(() => {
+
+  }, [activateRefresh]);
 
   //FormHistoryArea
 
@@ -139,17 +322,19 @@ export default function Home() {
 
   useEffect(() => {
     if (activatedSection === "1") {
+      formPerson.resetFields();
       fetchAPI(urlAPI, "api/persons/").then((data) => {
         if (data && data.results) {
           setPersons(data.results);
         } else {
           setPersons([]);
+          setSelectedPersonWeight(0.0);
         }
       });
     } else if (activatedSection === "2") {
       fetchContainers();
     }
-  }, [activatedSection, openModal]);
+  }, [activatedSection, openModal, formPerson]);
 
   async function handleOk() {
     formModal.submit();
@@ -164,8 +349,6 @@ export default function Home() {
         kg: values.weight,
       };
 
-      console.log("body", body);
-
       await fetchAPI(urlAPI, "api/persons/", "POST", body)
         .then((res) => {
           if (res.name[0] === "person with this name already exists.") {
@@ -178,7 +361,6 @@ export default function Home() {
             });
             return;
           }
-          console.log("res", res);
           fetchAPI(urlAPI, "api/persons/").then((data) => {
             try {
               if (data.results) {
@@ -280,7 +462,9 @@ export default function Home() {
       {contextHolder}
       <br />
       <br />
-      <h1 style={{ color: "black" }}>Aquamemento</h1>
+      <h1 style={{ color: "black" }} onClick={() => setActivatedSection("1")}>
+        Aquamemento
+      </h1>
       <br />
       <br />
       {activatedSection === "1" ? (
@@ -401,15 +585,16 @@ export default function Home() {
                         </Radio>
                       );
                     })}
-                    <Radio value={100}>
+                    <Radio key={100} value={valueRadio}>
                       Adicionar
-                      {valueContainer === 100 ? (
                         <InputNumber
                           min={0}
                           step={0.1}
+                          defaultValue={100.0}
+                          onChange={setValueRadio}
+                          value={valueRadio}
                           style={{ width: 100, marginLeft: 10 }}
                         />
-                      ) : null}
                     </Radio>
                   </Space>
                 </Radio.Group>
@@ -420,7 +605,7 @@ export default function Home() {
                   htmlType="submit"
                   disabled={!consumeButtonActive}
                   onClick={() => {
-                    setActivatedSection("3");
+                    handleConsume()
                   }}
                 >
                   Consumir
@@ -448,7 +633,7 @@ export default function Home() {
                 color: "black",
               }}
             >
-              META
+              META de {selectedPersonName.toUpperCase()}
             </h2>
             <br />
             <h3
@@ -487,7 +672,11 @@ export default function Home() {
             >
               Chegou na meta? {goal.current ? "SIM" : "NÃO"}
             </h2>
-            <br/>
+            <br />
+
+            <Button type="primary" onClick={() => setActivatedSection("3")}>
+              Histórico
+            </Button>
           </div>
         </>
       ) : (
