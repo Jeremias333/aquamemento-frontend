@@ -155,9 +155,9 @@ export default function Home() {
         });
       let path = "api/persons/" + personId.current + "/";
       await fetchAPI(urlAPI, path, "GET").then((res) => {
-        if (res && res.now_drink){
+        if (res && res.now_drink) {
           nowDrink.current = res.now_drink;
-        }else{
+        } else {
           notify.error({
             message: "Erro ao pegar informações!",
             description: "Ocorreu um erro ao pegar informações do servidor!",
@@ -171,11 +171,11 @@ export default function Home() {
 
       let pathToInfos = "api/infos/" + nowDrink.current + "/";
       await fetchAPI(urlAPI, pathToInfos, "GET").then((res) => {
-        if (res){
+        if (res) {
           dailyConsumed.current = res.drank;
           goal.current = res.reached_goal;
-          console.log("goal: " + goal.current)
-        }else{
+          console.log("goal: " + goal.current);
+        } else {
           notify.error({
             message: "Erro ao pegar informações!",
             description: "Ocorreu um erro ao pegar informações do servidor!",
@@ -190,14 +190,19 @@ export default function Home() {
       let bodyRemaining = {
         daily_goal: dailyGoal.current,
         drank: dailyConsumed.current,
-      }
+      };
 
-      console.log(dailyConsumed.current, dailyGoal.current)
-
-      await fetchAPI(urlAPI, "api/calculate/remaining-percentage/", "POST", bodyRemaining).then((res) => {
-        if (res && res.remaining_percent){
-          dailyConsumedPercent.current = parseFloat(res.remaining_percent).toFixed(2);
-        }else{
+      await fetchAPI(
+        urlAPI,
+        "api/calculate/remaining-percentage/",
+        "POST",
+        bodyRemaining
+      ).then((res) => {
+        if (res && res.remaining_percent) {
+          dailyConsumedPercent.current = parseFloat(
+            res.remaining_percent
+          ).toFixed(2);
+        } else {
           notify.error({
             message: "Erro ao pegar informações!",
             description: "Ocorreu um erro ao pegar informações do servidor!",
@@ -209,12 +214,17 @@ export default function Home() {
         }
       });
 
-      await fetchAPI(urlAPI, "api/calculate/remaining-goal/", "POST", bodyRemaining).then((res) => {
-        if (res){
+      await fetchAPI(
+        urlAPI,
+        "api/calculate/remaining-goal/",
+        "POST",
+        bodyRemaining
+      ).then((res) => {
+        if (res) {
           dailyGoalRemaining.current = res.remaining_goal;
           canNextPage.current = true;
           return;
-        }else{
+        } else {
           notify.error({
             message: "Erro ao pegar informações!",
             description: "Ocorreu um erro ao pegar informações do servidor!",
@@ -230,7 +240,6 @@ export default function Home() {
         canNextPage.current = false;
         setActivatedSection("2");
       }
-      
     }
   }
 
@@ -259,10 +268,6 @@ export default function Home() {
 
   const onChangeContainer = (e: RadioChangeEvent) => {
     setConsumeButtonActive(true);
-    // const radioNew = formConsume.getFieldValue("customContainer");
-    // console.log(radioNew);
-    console.log(e.target.checked)
-    // console.log("radio checked", e.target.value);
     setValueContainer(e.target.value);
   };
 
@@ -280,9 +285,9 @@ export default function Home() {
     let body = {
       person_id: personId.current,
       drink: valueContainer,
-    }
+    };
     await fetchAPI(urlAPI, "api/drink/", "PUT", body).then((res) => {
-      if (res){
+      if (res) {
         console.log("Consumiu");
         notify.success({
           message: "Consumiu com sucesso!",
@@ -290,7 +295,7 @@ export default function Home() {
           placement: "topRight",
           duration: 3,
         });
-      }else{
+      } else {
         notify.error({
           message: "Erro ao consumir!",
           description: "Ocorreu um erro ao consumir!",
@@ -300,10 +305,6 @@ export default function Home() {
       }
     });
   }
-
-  useEffect(() => {
-
-  }, [activateRefresh]);
 
   //FormHistoryArea
 
@@ -335,6 +336,62 @@ export default function Home() {
       fetchContainers();
     }
   }, [activatedSection, openModal, formPerson]);
+
+  useEffect(() => {
+    async function refreshMeta() {
+      let pathToInfos = "api/infos/" + nowDrink.current + "/";
+      await fetchAPI(urlAPI, pathToInfos, "GET").then((res) => {
+        if (res) {
+          dailyConsumed.current = res.drank;
+          goal.current = res.reached_goal;
+          dailyGoal.current = res.daily_goal;
+        } else {
+          return;
+        }
+      });
+
+      let bodyRemaining = {
+        daily_goal: dailyGoal.current,
+        drank: dailyConsumed.current,
+      };
+
+      await fetchAPI(
+        urlAPI,
+        "api/calculate/remaining-percentage/",
+        "POST",
+        bodyRemaining
+      ).then((res) => {
+        if (res && res.remaining_percent) {
+          dailyConsumedPercent.current = parseFloat(
+            res.remaining_percent
+          ).toFixed(2);
+        } else {
+          return;
+        }
+      });
+
+      await fetchAPI(
+        urlAPI,
+        "api/calculate/remaining-goal/",
+        "POST",
+        bodyRemaining
+      ).then((res) => {
+        if (res) {
+          dailyGoalRemaining.current = res.remaining_goal;
+          canNextPage.current = true;
+          return;
+        } else {
+          return;
+        }
+      });
+    }
+    if (activatedSection === "2"){
+      refreshMeta().then(() => {
+        setActivateRefresh(!activateRefresh);
+      });
+    }
+    
+  }, [activateRefresh, activatedSection]);
 
   async function handleOk() {
     formModal.submit();
@@ -587,14 +644,14 @@ export default function Home() {
                     })}
                     <Radio key={100} value={valueRadio}>
                       Adicionar
-                        <InputNumber
-                          min={0}
-                          step={0.1}
-                          defaultValue={100.0}
-                          onChange={setValueRadio}
-                          value={valueRadio}
-                          style={{ width: 100, marginLeft: 10 }}
-                        />
+                      <InputNumber
+                        min={0}
+                        step={0.1}
+                        defaultValue={100.0}
+                        onChange={setValueRadio}
+                        value={valueRadio}
+                        style={{ width: 100, marginLeft: 10 }}
+                      />
                     </Radio>
                   </Space>
                 </Radio.Group>
@@ -605,7 +662,7 @@ export default function Home() {
                   htmlType="submit"
                   disabled={!consumeButtonActive}
                   onClick={() => {
-                    handleConsume()
+                    handleConsume();
                   }}
                 >
                   Consumir
