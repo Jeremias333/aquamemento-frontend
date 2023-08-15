@@ -2,6 +2,7 @@
 
 import {
   Button,
+  Card,
   DatePicker,
   DatePickerProps,
   Divider,
@@ -16,8 +17,8 @@ import {
   notification,
 } from "antd";
 import styles from "./page.module.css";
-import { useEffect, useRef, useState } from "react";
-import { Container, Person } from "./interfaces";
+import { use, useEffect, useRef, useState } from "react";
+import { Container, Infos, Person } from "./interfaces";
 import { PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -198,11 +199,12 @@ export default function Home() {
         "POST",
         bodyRemaining
       ).then((res) => {
-        if (res && res.remaining_percent) {
+        if (res && res.remaining_percent || res.remaining_percent === 0) {
           dailyConsumedPercent.current = parseFloat(
             res.remaining_percent
           ).toFixed(2);
         } else {
+          console.log("Cai aqui")
           notify.error({
             message: "Erro ao pegar informações!",
             description: "Ocorreu um erro ao pegar informações do servidor!",
@@ -259,6 +261,15 @@ export default function Home() {
   const [activateRefresh, setActivateRefresh] = useState<boolean>(false);
   const [valueRadio, setValueRadio] = useState<number | null>(0.0);
 
+  const [dailyGoalComponent, setDailyGoalComponent] = useState<number>(0.0);
+  const [dailyConsumedComponent, setDailyConsumedComponent] =
+    useState<number>(0.0);
+  const [dailyGoalRemainingComponent, setDailyGoalRemainingComponent] =
+    useState<number>(0.0);
+  const [dailyConsumedPercentComponent, setDailyConsumedPercentComponent] =
+    useState<string>("0");
+  const [goalComponent, setGoalComponent] = useState<boolean>(false);
+
   const onChangeDatePickcer: DatePickerProps["onChange"] = (
     date,
     dateString
@@ -295,6 +306,7 @@ export default function Home() {
           placement: "topRight",
           duration: 3,
         });
+        refreshMeta();
       } else {
         notify.error({
           message: "Erro ao consumir!",
@@ -307,9 +319,36 @@ export default function Home() {
   }
 
   //FormHistoryArea
+  const infosList = useRef<Infos[]>([]);
+  const [infosListComponent, setInfosListComponent] = useState<Infos[]>([]);
+
+  async function fetchHistory() {
+    let body = {
+      person_id: personId.current,
+    };
+
+    await fetchAPI(urlAPI, "api/history/by-person/", "POST", body).then(
+      (data) => {
+        if (data && data.infos) {
+          infosList.current = data.infos;
+          console.log(infosList.current);
+          setInfosListComponent(infosList.current);
+        } else {
+          infosList.current = [];
+          console.log("falhei", infosList.current);
+        }
+      }
+    );
+  }
+
+  function handleHistory(){
+    setTimeout(() => {
+      fetchHistory();
+      setActivatedSection("3");
+    }, 1000);
+  }
 
   //General Area
-  const [formHistory] = Form.useForm();
 
   const [activatedSection, setActivatedSection] = useState("1");
   const [notify, contextHolder] = notification.useNotification();
@@ -323,6 +362,7 @@ export default function Home() {
 
   useEffect(() => {
     if (activatedSection === "1") {
+      formModal.resetFields();
       formPerson.resetFields();
       fetchAPI(urlAPI, "api/persons/").then((data) => {
         if (data && data.results) {
@@ -334,64 +374,65 @@ export default function Home() {
       });
     } else if (activatedSection === "2") {
       fetchContainers();
+    } else if (activatedSection === "3") {
+      fetchHistory();
     }
-  }, [activatedSection, openModal, formPerson]);
+  }, [activatedSection, openModal, formPerson, formModal]);
 
-  useEffect(() => {
-    async function refreshMeta() {
-      let pathToInfos = "api/infos/" + nowDrink.current + "/";
-      await fetchAPI(urlAPI, pathToInfos, "GET").then((res) => {
-        if (res) {
-          dailyConsumed.current = res.drank;
-          goal.current = res.reached_goal;
-          dailyGoal.current = res.daily_goal;
-        } else {
-          return;
-        }
-      });
+  async function refreshMeta() {
+    let pathToInfos = "api/infos/" + nowDrink.current + "/";
+    await fetchAPI(urlAPI, pathToInfos, "GET").then((res) => {
+      if (res) {
+        dailyConsumed.current = res.drank;
+        goal.current = res.reached_goal;
+        dailyGoal.current = res.daily_goal;
+      } else {
+        return;
+      }
+    });
 
-      let bodyRemaining = {
-        daily_goal: dailyGoal.current,
-        drank: dailyConsumed.current,
-      };
+    let bodyRemaining = {
+      daily_goal: dailyGoal.current,
+      drank: dailyConsumed.current,
+    };
 
-      await fetchAPI(
-        urlAPI,
-        "api/calculate/remaining-percentage/",
-        "POST",
-        bodyRemaining
-      ).then((res) => {
-        if (res && res.remaining_percent) {
-          dailyConsumedPercent.current = parseFloat(
-            res.remaining_percent
-          ).toFixed(2);
-        } else {
-          return;
-        }
-      });
+    console.log("bodyRemaining", bodyRemaining);
 
-      await fetchAPI(
-        urlAPI,
-        "api/calculate/remaining-goal/",
-        "POST",
-        bodyRemaining
-      ).then((res) => {
-        if (res) {
-          dailyGoalRemaining.current = res.remaining_goal;
-          canNextPage.current = true;
-          return;
-        } else {
-          return;
-        }
-      });
-    }
-    if (activatedSection === "2"){
-      refreshMeta().then(() => {
-        setActivateRefresh(!activateRefresh);
-      });
-    }
-    
-  }, [activateRefresh, activatedSection]);
+    await fetchAPI(
+      urlAPI,
+      "api/calculate/remaining-percentage/",
+      "POST",
+      bodyRemaining
+    ).then((res) => {
+      if (res && res.remaining_percent) {
+        dailyConsumedPercent.current = parseFloat(
+          res.remaining_percent
+        ).toFixed(2);
+      } else {
+        return;
+      }
+    });
+
+    await fetchAPI(
+      urlAPI,
+      "api/calculate/remaining-goal/",
+      "POST",
+      bodyRemaining
+    ).then((res) => {
+      if (res) {
+        dailyGoalRemaining.current = res.remaining_goal;
+        canNextPage.current = true;
+        return;
+      } else {
+        return;
+      }
+    });
+    setDailyGoalComponent(dailyGoal.current);
+    setDailyConsumedComponent(dailyConsumed.current);
+    setDailyGoalRemainingComponent(dailyGoalRemaining.current);
+    setDailyConsumedPercentComponent(dailyConsumedPercent.current);
+    setGoalComponent(goal.current);
+  }
 
   async function handleOk() {
     formModal.submit();
@@ -731,7 +772,7 @@ export default function Home() {
             </h2>
             <br />
 
-            <Button type="primary" onClick={() => setActivatedSection("3")}>
+            <Button type="primary" onClick={() => handleHistory()}>
               Histórico
             </Button>
           </div>
@@ -741,7 +782,21 @@ export default function Home() {
       )}
 
       {activatedSection === "3" ? (
-        <Form form={formHistory} name="formHistory"></Form>
+        <div>
+          {infosListComponent.map((info, index) => {
+            return (<div key={index}>
+              <Card
+                title={selectedPersonName}
+                style={{ width: 300, marginTop: 16 }}>
+                <p>Data: {info.created_at}</p>
+                <p>Meta diária: {info.daily_goal}ml</p>
+                <p>Quantos mls bebeu: {info.drank}</p>
+                <p>Chegou na meta: {info.reached_goal ? "SIM" : "NÃO"}</p>
+                </Card>
+                <Divider />
+            </div>);
+          })}
+        </div>
       ) : (
         <></>
       )}
